@@ -25,6 +25,7 @@ signing.properties
 
 # Build artifacts
 *.apk
+!apk/*.apk
 *.aab
 *.ap_
 *.dex
