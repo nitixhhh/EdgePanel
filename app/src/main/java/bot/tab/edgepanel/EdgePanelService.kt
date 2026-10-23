@@ -17,6 +17,7 @@ import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
 import android.view.Gravity
+import android.view.View
 import android.view.WindowManager
 
 class EdgePanelService : Service() {
@@ -43,12 +44,17 @@ class EdgePanelService : Service() {
 
     private lateinit var wm: WindowManager
     private var panel: EdgePanelView? = null
-    private var params: WindowManager.LayoutParams? = null
+    private var handle: HandleView? = null
+    private var panelLp: WindowManager.LayoutParams? = null
+    private var handleLp: WindowManager.LayoutParams? = null
     private lateinit var sound: SoundControl
     private lateinit var bright: BrightnessControl
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
 
     private val stateReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) { panel?.refreshState() }
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == Intent.ACTION_BATTERY_CHANGED) panel?.onBattery(intent) else panel?.refreshState()
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -115,70 +121,86 @@ class EdgePanelService : Service() {
         nm.createNotificationChannel(ch)
     }
 
+    /**
+     * Two overlay windows, both a fixed size for their whole life (v3; see PanelHost):
+     *  - the handle window: a thin touch strip on the edge (30dp x ~120dp), always shown;
+     *  - the panel window: the full panel area, above the handle, INVISIBLE (no touches, nothing drawn) until opened.
+     * Both are centred on the same line, so the closed shape is pixel-identical in either window.
+     */
     @android.annotation.SuppressLint("RtlHardcoded") // the panel sits on a physical screen edge
     private fun addPanel() {
         val view = EdgePanelView(this, sound, bright, Prefs.sideRight(this))
-        val lp = WindowManager.LayoutParams(
-            view.collapsedWindowW, view.collapsedWindowH,
+        val h = HandleView(this, view)
+        val base = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+        val gravity = Gravity.TOP or (if (view.sideRight) Gravity.RIGHT else Gravity.LEFT)
+        val hl = WindowManager.LayoutParams(
+            view.handleWindowW, view.handleWindowH,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, base, PixelFormat.TRANSLUCENT
+        ).apply { this.gravity = gravity; x = 0; title = "EdgePanelHandle" }
+        val pl = WindowManager.LayoutParams(
+            view.expandedWindowW, view.expandedWindowH,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
-            PixelFormat.TRANSLUCENT
-        )
-        lp.gravity = Gravity.TOP or (if (view.sideRight) Gravity.RIGHT else Gravity.LEFT)
-        lp.x = 0
+            base or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH, PixelFormat.TRANSLUCENT
+        ).apply { this.gravity = gravity; x = 0; title = "EdgePanel" }
         if (Build.VERSION.SDK_INT >= 28) {
-            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            hl.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            pl.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
-        lp.title = "EdgePanel"
-        params = lp
-        view.windowSizer = { wPx, hPx -> resizeWindow(wPx, hPx) }
-        panel = view
-        positionWindow(lp, lp.height)
-        wm.addView(view, lp)
+        positionWindows(hl, pl)
+        view.visibility = View.INVISIBLE
+        view.host = object : PanelHost {
+            override fun showPanelWindow() { if (view.visibility != View.VISIBLE) view.visibility = View.VISIBLE }
+            override fun hidePanelWindow() { if (view.visibility != View.INVISIBLE) view.visibility = View.INVISIBLE }
+            override fun setHandleShown(shown: Boolean) { h.shown = shown }
+            override fun afterClose(delayMs: Long, action: () -> Unit) { main.postDelayed(action, delayMs) }
+        }
+        handleLp = hl; panelLp = pl; panel = view; handle = h
+        wm.addView(h, hl)
+        wm.addView(view, pl)          // added second, so it sits above the handle window
 
         val f = IntentFilter().apply {
             addAction("android.media.VOLUME_CHANGED_ACTION")
             addAction(AudioManager.RINGER_MODE_CHANGED_ACTION)
             addAction(NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED)
+            addAction(Intent.ACTION_BATTERY_CHANGED)
+            addAction(android.net.wifi.WifiManager.WIFI_STATE_CHANGED_ACTION)
+            addAction(android.bluetooth.BluetoothAdapter.ACTION_STATE_CHANGED)
         }
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(stateReceiver, f, Context.RECEIVER_EXPORTED)
         else registerReceiver(stateReceiver, f)
     }
 
-    private fun positionWindow(lp: WindowManager.LayoutParams, h: Int) {
+    /** One shared centre line: y = centre - height/2 for both (even heights, so no rounding drift). */
+    private fun positionWindows(hl: WindowManager.LayoutParams, pl: WindowManager.LayoutParams) {
         val screenH = resources.displayMetrics.heightPixels
-        val center = (screenH * Prefs.position(this) / 100f).toInt()
-        lp.y = (center - h / 2).coerceIn(-h / 2, screenH - h / 2)
-    }
-
-    private fun resizeWindow(wPx: Int, hPx: Int) {
-        val v = panel ?: return
-        val lp = params ?: return
-        if (lp.width == wPx && lp.height == hPx) return
-        lp.width = wPx
-        lp.height = hPx
-        positionWindow(lp, hPx)
-        try { wm.updateViewLayout(v, lp) } catch (_: Exception) { }
+        val center = (screenH * Prefs.position(this) / 100f).toInt().coerceIn(0, screenH)
+        hl.y = center - hl.height / 2
+        pl.y = center - pl.height / 2
     }
 
     private fun removePanel() {
         panel?.let {
             try { unregisterReceiver(stateReceiver) } catch (_: Exception) { }
             try { wm.removeViewImmediate(it) } catch (_: Exception) { }
+            it.release()
         }
+        handle?.let { try { wm.removeViewImmediate(it) } catch (_: Exception) { } }
         panel = null
+        handle = null
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         val v = panel ?: return
-        val lp = params ?: return
+        val h = handle ?: return
+        val hl = handleLp ?: return
+        val pl = panelLp ?: return
         v.collapseNow()
-        positionWindow(lp, lp.height)
-        try { wm.updateViewLayout(v, lp) } catch (_: Exception) { }
+        positionWindows(hl, pl)
+        try { wm.updateViewLayout(h, hl) } catch (_: Exception) { }
+        try { wm.updateViewLayout(v, pl) } catch (_: Exception) { }
     }
 
     override fun onDestroy() {

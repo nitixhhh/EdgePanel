@@ -36,6 +36,10 @@ class MainActivity : Activity() {
     private lateinit var dndBtn: Button
     private lateinit var notifBtn: Button
     private lateinit var writeBtn: Button
+    private lateinit var a11yBtn: Button
+    private lateinit var listenerBtn: Button
+    private lateinit var pagesBox: LinearLayout
+    private lateinit var appBtns: Array<Button>
     private lateinit var preview: EdgePanelView
     private val themeCards = ArrayList<Button>()
     private lateinit var accentRow: LinearLayout
@@ -50,9 +54,9 @@ class MainActivity : Activity() {
         }
 
         root.addView(text("Edge Panel", 30f, Color.WHITE, bold = true))
-        root.addView(text("v2.0", 13f, 0xFF8E8E95.toInt()))
+        root.addView(text("v3.0", 13f, 0xFF8E8E95.toInt()))
         root.addView(text(
-            "Screen ke side se ek panel nikalta hai: volume + brightness, Silent/Ring aur DND/Work/Personal modes, ek swipe me.",
+            "Screen ke side se ek panel nikalta hai: volume + brightness, Silent/Ring, DND/Work/Personal, torch, Wi-Fi/Bluetooth, screenshot, music, battery aur apps. Handle ko pakad ke andar kheencho ya tap karo.",
             15f, 0xFFB8B8BE.toInt()
         ).apply { setPadding(0, dp(6), 0, dp(18)) })
 
@@ -74,6 +78,22 @@ class MainActivity : Activity() {
         }
         root.addView(writeBtn)
         root.addView(hint("Brightness slider ke liye. List me Edge Panel ko \"Allow modifying system settings\" ON karo."))
+
+        a11yBtn = button("Screenshot ke liye Accessibility — On karo") {
+            ShotService.openSettings(this)
+        }
+        root.addView(a11yBtn)
+        root.addView(hint("Screenshot button ke liye. Accessibility me \"Installed apps\" / \"Downloaded apps\" me \"Edge Panel screenshot\" ON karo. " +
+            "Ye sirf screenshot leta hai, screen ka kuch nahi padhta.\n" +
+            "Agar switch grey ho ya \"Restricted setting\" aaye (Android 13+): neeche wala button dabao → App info → upar ⋮ (3 dots) → \"Allow restricted settings\", phir yahan wapas aake ON karo."))
+        root.addView(button("App info kholo (restricted settings ke liye)") { ShotService.openAppInfo(this) }.apply {
+            background = round(0xFF1C1C21.toInt()); setTextColor(0xFFB8B8BE.toInt()); textSize = 14f
+        })
+
+        listenerBtn = button("Gaane ka naam dikhao (optional)") { MediaControl(this).openListenerSettings() }
+        root.addView(listenerBtn)
+        root.addView(hint("Optional. Music page pe chal raha gaana dikhane ke liye \"Notification access\" me Edge Panel ON karo. " +
+            "Iske bina bhi play/pause/next/previous chalte hain. (Android 13+ pe isme bhi \"Allow restricted settings\" lag sakta hai.)"))
 
         notifBtn = button("Notification permission do") {
             if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
@@ -120,6 +140,26 @@ class MainActivity : Activity() {
         root.addView(text("Accent colour", 14f, 0xFFB8B8BE.toInt()).apply { setPadding(0, dp(10), 0, dp(6)) })
         accentRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         root.addView(accentRow)
+
+        root.addView(section("Sound aur vibration"))
+        root.addView(switch("Sound effects (halki click/tick, ring, DND)", Prefs.soundOn(this)) { on ->
+            Prefs.of(this).edit().putBoolean(Prefs.KEY_SOUND, on).apply()
+        })
+        root.addView(switch("Vibration (haptic feedback)", Prefs.hapticOn(this)) { on ->
+            Prefs.of(this).edit().putBoolean(Prefs.KEY_HAPTIC, on).apply()
+        })
+        root.addView(hint("Sound phone ke \"system sounds\" volume pe bajti hai; Silent mode me phone khud use chup kar deta hai."))
+
+        root.addView(section("Pages (on/off aur order)"))
+        pagesBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(pagesBox)
+        root.addView(hint("↑ ↓ se order badlo. Jo page nahi chahiye uska switch off karo."))
+
+        root.addView(section("Quick apps page"))
+        root.addView(hint("Camera aur Calculator pehle se hain. Do apps aur jod sakte ho:"))
+        appBtns = Array(2) { slot ->
+            button("") { pickApp(slot) }.also { root.addView(it) }
+        }
 
         root.addView(section("3. Panel kis side pe?"))
         val group = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
@@ -168,11 +208,13 @@ class MainActivity : Activity() {
 
         root.addView(section("Kaise use kare"))
         root.addView(text(
-            "• Edge pe patli si handle hai. Tap karo ya andar ki taraf kheencho, panel ungli ke saath khulta hai.\n" +
-            "• Page badalna: panel pe kahin bhi upar/neeche swipe karo. Slider ke upar bhi ek tez flick page badal deta hai; slider ko dheere kheencho to volume/brightness badalti hai. Neeche ke 3 dots pe tap bhi kar sakte ho.\n" +
-            "• Page 1: brightness ☀ (left) aur volume 🔊 (right). Track pe tap karo to wahan jump karta hai.\n" +
-            "• Page 2: Silent / Vibrate / Ring, icon pe tap karo.\n" +
-            "• Page 3: DND on/off, WORK, PERSONAL.\n" +
+            "• Edge pe patli si handle hai. Use pakdo aur andar ki taraf kheencho: panel ungli ke saath khulta hai. Tap bhi chalta hai.\n" +
+            "• Page badalna: panel pe kahin bhi upar/neeche swipe karo. Slider ke upar bhi ek tez flick page badal deta hai; slider ka glass dheere kheencho to volume/brightness badalti hai. Neeche ke dots pe tap bhi kar sakte ho.\n" +
+            "• Sliders: brightness ☀ (left) aur volume 🔊 (right). Track pe tap karo to glass wahan jump karta hai.\n" +
+            "• Ringer: Silent / Vibrate / Ring. Modes: DND on/off, WORK, PERSONAL.\n" +
+            "• Quick: Torch, Wi-Fi, Bluetooth, Screenshot. Wi-Fi/Bluetooth Android ka apna panel kholte hain (Android 10+ me apps khud Wi-Fi on/off nahi kar sakte).\n" +
+            "• Music: battery %, previous, play/pause, next.\n" +
+            "• Apps: Camera, Calculator aur tumhare chune hue apps.\n" +
             "• Panel ko edge ki taraf wapas dhakelo, ya bahar tap karo, ya 3 sec chhod do: band ho jata hai.\n" +
             "• Brightness kheenchne par auto-brightness off ho jati hai.\n\n" +
             "WORK = Vibrate + DND (sirf priority) + media volume 30%.\n" +
@@ -185,6 +227,11 @@ class MainActivity : Activity() {
             addView(root, MATCH_PARENT, WRAP_CONTENT)
             isFillViewport = true
         })
+    }
+
+    override fun onDestroy() {
+        preview.release()
+        super.onDestroy()
     }
 
     override fun onResume() {
@@ -201,6 +248,10 @@ class MainActivity : Activity() {
         mark(dndBtn, dnd, "Do Not Disturb access ✓ mil gaya", "Do Not Disturb access — Allow karo")
         mark(notifBtn, notif, "Notifications ✓", "Notification permission do")
         mark(writeBtn, Settings.System.canWrite(this), "Modify system settings ✓ mil gaya", "Modify system settings — Allow karo")
+        mark(a11yBtn, ShotService.isEnabled(this), "Screenshot (Accessibility) ✓ on hai", "Screenshot ke liye Accessibility — On karo")
+        mark(listenerBtn, MediaControl(this).hasTitleAccess, "Gaane ka naam ✓ dikhega", "Gaane ka naam dikhao (optional)")
+        refreshPages()
+        refreshApps()
         preview.refreshState(animate = false)
         refreshThemeUi()
         val running = EdgePanelService.isRunning
@@ -269,6 +320,80 @@ class MainActivity : Activity() {
             }
             accentRow.addView(v, LinearLayout.LayoutParams(dp(34), dp(34)).apply { rightMargin = dp(10) })
         }
+    }
+
+    // ---------- pages ----------
+    private fun refreshPages() {
+        pagesBox.removeAllViews()
+        val order = Prefs.pageOrder(this).toMutableList()
+        val off = Prefs.hiddenPages(this).toMutableSet()
+        order.forEachIndexed { i, type ->
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            val sw = Switch(this).apply {
+                text = "${i + 1}. ${PageType.NAMES[type]}"
+                setTextColor(Color.WHITE); textSize = 14f
+                isChecked = type !in off
+                setOnCheckedChangeListener { _: CompoundButton, on: Boolean ->
+                    if (on) off.remove(type) else off.add(type)
+                    if (off.size >= PageType.COUNT) { off.remove(type); isChecked = true }
+                    Prefs.of(this@MainActivity).edit().putString(Prefs.KEY_PAGES_OFF, off.joinToString(",")).apply()
+                }
+            }
+            row.addView(sw, LinearLayout.LayoutParams(0, dp(48), 1f))
+            fun arrow(label: String, delta: Int) = Button(this).apply {
+                text = label; textSize = 16f; setTextColor(Color.WHITE); stateListAnimator = null
+                background = round(0xFF26262B.toInt())
+                val j = i + delta
+                isEnabled = j in order.indices
+                alpha = if (isEnabled) 1f else 0.3f
+                setOnClickListener {
+                    val o = order.toMutableList(); val t = o[i]; o[i] = o[j]; o[j] = t
+                    Prefs.of(this@MainActivity).edit().putString(Prefs.KEY_PAGE_ORDER, o.joinToString(",")).apply()
+                    refreshPages()
+                }
+            }
+            row.addView(arrow("↑", -1), LinearLayout.LayoutParams(dp(44), dp(40)).apply { leftMargin = dp(6) })
+            row.addView(arrow("↓", 1), LinearLayout.LayoutParams(dp(44), dp(40)).apply { leftMargin = dp(6) })
+            pagesBox.addView(row)
+        }
+    }
+
+    // ---------- quick apps ----------
+    private fun refreshApps() {
+        appBtns.forEachIndexed { slot, b ->
+            val p = Prefs.app(this, slot)
+            val label = p?.let { try { packageManager.getApplicationLabel(packageManager.getApplicationInfo(it, 0)).toString() } catch (_: Exception) { null } }
+            b.text = if (label != null) "App ${slot + 1}: $label ✓ (badalne ke liye tap)" else "App ${slot + 1} chuno"
+        }
+    }
+
+    private fun pickApp(slot: Int) {
+        val pm = packageManager
+        val list = try {
+            pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
+                .map { it.activityInfo.packageName to it.loadLabel(pm).toString() }
+                .filter { it.first != packageName }
+                .distinctBy { it.first }
+                .sortedBy { it.second.lowercase() }
+        } catch (_: Exception) { emptyList() }
+        val names = (listOf("— Koi nahi (hata do) —") + list.map { it.second }).toTypedArray()
+        android.app.AlertDialog.Builder(this)
+            .setTitle("App ${slot + 1} chuno")
+            .setItems(names) { _, which ->
+                val pkg = if (which == 0) "" else list[which - 1].first
+                Prefs.of(this).edit().putString(if (slot == 0) Prefs.KEY_APP1 else Prefs.KEY_APP2, pkg).apply()
+                refreshApps()
+            }
+            .show()
+    }
+
+    private fun switch(label: String, checked: Boolean, onChange: (Boolean) -> Unit) = Switch(this).apply {
+        text = label
+        setTextColor(Color.WHITE)
+        textSize = 15f
+        isChecked = checked
+        setPadding(0, dp(8), 0, dp(4))
+        setOnCheckedChangeListener { _: CompoundButton, on: Boolean -> onChange(on) }
     }
 
     // ---------- tiny UI helpers ----------

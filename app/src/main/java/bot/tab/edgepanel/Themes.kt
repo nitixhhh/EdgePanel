@@ -1,6 +1,7 @@
 package bot.tab.edgepanel
 
-// GENERATED from the v2 theme spec (same data drives the preview renders). Edit the spec, not this file.
+// Icon data GENERATED from the v2 theme spec (tools/theme_spec.json). v3 added the IconRole widget roles by hand;
+// the widget icons themselves are in ExtraIcons.kt (tools/gen_extra_icons.py).
 
 /**
  * One layer of an icon: an SVG path (24x24 viewBox) pre-flattened at build time into commands
@@ -24,7 +25,16 @@ class IconLayer(val kind: Int, val cmds: FloatArray) {
 
 object IconKind { const val FILL = 0; const val STROKE = 1; const val KNOCK = 2; const val KNOCK_FILL = 3; const val TINT = 4; const val KNOCK_STROKE = 5 }
 
-object IconRole { const val VOL = 0; const val VOLMUTE = 1; const val SUN = 2; const val SILENT = 3; const val VIBRATE = 4; const val RING = 5; const val DND = 6; const val WORK = 7; const val PERSONAL = 8; const val COUNT = 9 }
+object IconRole {
+    const val VOL = 0; const val VOLMUTE = 1; const val SUN = 2; const val SILENT = 3; const val VIBRATE = 4; const val RING = 5
+    const val DND = 6; const val WORK = 7; const val PERSONAL = 8
+    /** Roles per theme in Themes (the v2 spec). */
+    const val THEMED = 9
+    // v3 widget icons (ExtraIcons, one set per style: fill / line / light)
+    const val TORCH = 9; const val TORCH_ON = 10; const val WIFI = 11; const val BT = 12; const val SHOT = 13
+    const val PLAY = 14; const val PAUSE = 15; const val NEXT = 16; const val PREV = 17; const val CAMERA = 18; const val CALC = 19
+    const val COUNT = 20
+}
 
 class PanelTheme(
     val id: String, val name: String, val icons: Array<Array<IconLayer>>, val iconStroke: Float, val knock: Float,
