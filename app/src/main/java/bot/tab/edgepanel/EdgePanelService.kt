@@ -45,6 +45,7 @@ class EdgePanelService : Service() {
     private var panel: EdgePanelView? = null
     private var params: WindowManager.LayoutParams? = null
     private lateinit var sound: SoundControl
+    private lateinit var bright: BrightnessControl
 
     private val stateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) { panel?.refreshState() }
@@ -56,6 +57,7 @@ class EdgePanelService : Service() {
         super.onCreate()
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
         sound = SoundControl(this)
+        bright = BrightnessControl(this)
         createChannel()
     }
 
@@ -113,8 +115,9 @@ class EdgePanelService : Service() {
         nm.createNotificationChannel(ch)
     }
 
+    @android.annotation.SuppressLint("RtlHardcoded") // the panel sits on a physical screen edge
     private fun addPanel() {
-        val view = EdgePanelView(this, sound, Prefs.sideRight(this))
+        val view = EdgePanelView(this, sound, bright, Prefs.sideRight(this))
         val lp = WindowManager.LayoutParams(
             view.collapsedWindowW, view.collapsedWindowH,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,

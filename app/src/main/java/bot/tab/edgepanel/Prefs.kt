@@ -12,6 +12,8 @@ object Prefs {
     const val KEY_MODE = "mode"                  // "", "work", "personal"
     const val KEY_PAGE = "page"
     const val KEY_SAVED_MEDIA = "saved_media"    // media volume before Work mode
+    const val KEY_THEME = "theme"                // classic, glass, neon, light
+    const val KEY_ACCENT_PREFIX = "accent_"      // + theme id -> colour int, 0 = theme default
 
     fun of(c: Context): SharedPreferences = c.getSharedPreferences(NAME, Context.MODE_PRIVATE)
 
@@ -19,4 +21,6 @@ object Prefs {
     fun position(c: Context) = of(c).getInt(KEY_POSITION, 38)
     fun startOnBoot(c: Context) = of(c).getBoolean(KEY_BOOT, false)
     fun running(c: Context) = of(c).getBoolean(KEY_RUNNING, false)
+    fun theme(c: Context): String = of(c).getString(KEY_THEME, "classic") ?: "classic"
+    fun accent(c: Context, themeId: String) = of(c).getInt(KEY_ACCENT_PREFIX + themeId, 0)
 }

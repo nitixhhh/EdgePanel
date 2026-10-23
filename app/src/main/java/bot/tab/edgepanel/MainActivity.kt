@@ -17,6 +17,7 @@ import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.CompoundButton
 import android.widget.LinearLayout
 import android.widget.RadioButton
@@ -34,6 +35,10 @@ class MainActivity : Activity() {
     private lateinit var overlayBtn: Button
     private lateinit var dndBtn: Button
     private lateinit var notifBtn: Button
+    private lateinit var writeBtn: Button
+    private lateinit var preview: EdgePanelView
+    private val themeCards = ArrayList<Button>()
+    private lateinit var accentRow: LinearLayout
     private lateinit var startBtn: Button
     private lateinit var statusText: TextView
 
@@ -45,8 +50,9 @@ class MainActivity : Activity() {
         }
 
         root.addView(text("Edge Panel", 30f, Color.WHITE, bold = true))
+        root.addView(text("v2.0", 13f, 0xFF8E8E95.toInt()))
         root.addView(text(
-            "Screen ke side se ek black panel nikalta hai: volume, Silent/Ring aur DND/Work/Personal modes, ek swipe me.",
+            "Screen ke side se ek panel nikalta hai: volume + brightness, Silent/Ring aur DND/Work/Personal modes, ek swipe me.",
             15f, 0xFFB8B8BE.toInt()
         ).apply { setPadding(0, dp(6), 0, dp(18)) })
 
@@ -63,6 +69,12 @@ class MainActivity : Activity() {
         root.addView(dndBtn)
         root.addView(hint("List me \"Edge Panel\" dhundo aur ON karo. Silent mode, DND aur Work/Personal ke liye chahiye."))
 
+        writeBtn = button("Modify system settings — Allow karo") {
+            startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:$packageName")))
+        }
+        root.addView(writeBtn)
+        root.addView(hint("Brightness slider ke liye. List me Edge Panel ko \"Allow modifying system settings\" ON karo."))
+
         notifBtn = button("Notification permission do") {
             if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         }
@@ -71,7 +83,45 @@ class MainActivity : Activity() {
             root.addView(hint("Android ko background panel ke liye ek chhoti notification chahiye."))
         }
 
-        root.addView(section("2. Panel kis side pe?"))
+        root.addView(section("2. Style chuno"))
+        val sound = SoundControl(this)
+        val bright = BrightnessControl(this)
+        preview = EdgePanelView(this, sound, bright, sideRight = true, preview = true)
+        val stage = FrameLayout(this).apply {
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                intArrayOf(0xFF3B2A6B.toInt(), 0xFF8A3C6E.toInt(), 0xFFE08A5A.toInt())).apply { cornerRadius = 18 * d }
+            clipToOutline = true
+            addView(preview, FrameLayout.LayoutParams(MATCH_PARENT, preview.expandedWindowH))
+        }
+        root.addView(stage, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        root.addView(hint("Ye asli panel hai, yahin try karo: upar/neeche swipe karo page badalne ke liye."))
+
+        var row: LinearLayout? = null
+        Themes.ALL.forEachIndexed { i, t ->
+            if (i % 2 == 0) {
+                row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                root.addView(row, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+            }
+            val b = Button(this).apply {
+                text = t.name
+                isAllCaps = false
+                textSize = 15f
+                stateListAnimator = null
+                setOnClickListener {
+                    Prefs.of(this@MainActivity).edit().putString(Prefs.KEY_THEME, t.id).apply()
+                    refreshThemeUi()
+                }
+            }
+            themeCards.add(b)
+            row?.addView(b, LinearLayout.LayoutParams(0, dp(58), 1f).apply {
+                setMargins(if (i % 2 == 0) 0 else dp(5), dp(5), if (i % 2 == 0) dp(5) else 0, dp(5))
+            })
+        }
+        root.addView(text("Accent colour", 14f, 0xFFB8B8BE.toInt()).apply { setPadding(0, dp(10), 0, dp(6)) })
+        accentRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        root.addView(accentRow)
+
+        root.addView(section("3. Panel kis side pe?"))
         val group = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL }
         val right = radio("Right edge", 101)
         val left = radio("Left edge", 102)
@@ -97,7 +147,7 @@ class MainActivity : Activity() {
             })
         })
 
-        root.addView(section("3. Start karo"))
+        root.addView(section("4. Start karo"))
         startBtn = button("Start") { toggleService() }.apply {
             background = round(0xFF8E7CFF.toInt())
         }
@@ -118,12 +168,13 @@ class MainActivity : Activity() {
 
         root.addView(section("Kaise use kare"))
         root.addView(text(
-            "• Edge pe patli si handle hai. Tap karo ya andar ki taraf swipe karo, panel khul jayega.\n" +
-            "• Page 1: volume slider ko upar-neeche drag karo (media volume).\n" +
+            "• Edge pe patli si handle hai. Tap karo ya andar ki taraf kheencho, panel ungli ke saath khulta hai.\n" +
+            "• Page badalna: panel pe kahin bhi upar/neeche swipe karo. Slider ke upar bhi ek tez flick page badal deta hai; slider ko dheere kheencho to volume/brightness badalti hai. Neeche ke 3 dots pe tap bhi kar sakte ho.\n" +
+            "• Page 1: brightness ☀ (left) aur volume 🔊 (right). Track pe tap karo to wahan jump karta hai.\n" +
             "• Page 2: Silent / Vibrate / Ring, icon pe tap karo.\n" +
-            "• Page 3: 🌙 DND on/off, 👤 WORK, 🪪 PERSONAL.\n" +
-            "• Page badalne ke liye panel pe upar/neeche swipe karo, ya neeche ke dots pe tap karo.\n" +
-            "• 3 second kuch na karo, ya bahar tap karo, to panel band ho jata hai.\n\n" +
+            "• Page 3: DND on/off, WORK, PERSONAL.\n" +
+            "• Panel ko edge ki taraf wapas dhakelo, ya bahar tap karo, ya 3 sec chhod do: band ho jata hai.\n" +
+            "• Brightness kheenchne par auto-brightness off ho jati hai.\n\n" +
             "WORK = Vibrate + DND (sirf priority) + media volume 30%.\n" +
             "PERSONAL = Ring + DND off + pehle wala volume wapas.\n" +
             "(Ye Android ke asli work profile nahi, sound presets hain.)",
@@ -149,6 +200,9 @@ class MainActivity : Activity() {
         mark(overlayBtn, overlay, "Display over other apps ✓ mil gaya", "Display over other apps — Allow karo")
         mark(dndBtn, dnd, "Do Not Disturb access ✓ mil gaya", "Do Not Disturb access — Allow karo")
         mark(notifBtn, notif, "Notifications ✓", "Notification permission do")
+        mark(writeBtn, Settings.System.canWrite(this), "Modify system settings ✓ mil gaya", "Modify system settings — Allow karo")
+        preview.refreshState(animate = false)
+        refreshThemeUi()
         val running = EdgePanelService.isRunning
         startBtn.text = if (running) "Stop panel" else "Start panel"
         startBtn.background = round(if (running) 0xFF3A3A3F.toInt() else 0xFF8E7CFF.toInt())
@@ -180,6 +234,41 @@ class MainActivity : Activity() {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         refresh()
+    }
+
+    private fun refreshThemeUi() {
+        val cur = Prefs.theme(this)
+        Themes.ALL.forEachIndexed { i, t ->
+            val b = themeCards[i]
+            val selected = t.id == cur
+            b.background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(t.panelTop, t.panelBottom)).apply {
+                cornerRadius = 14 * d
+                setStroke(dp(if (selected) 3 else 1), if (selected) 0xFF8E7CFF.toInt() else 0x33FFFFFF)
+            }
+            val dark = Color.red(t.panelBottom) + Color.green(t.panelBottom) + Color.blue(t.panelBottom) < 384
+            b.setTextColor(if (dark) Color.WHITE else 0xFF1C1C1E.toInt())
+            b.text = if (selected) "✓ " + t.name else t.name
+        }
+        accentRow.removeAllViews()
+        val theme = Themes.byId(cur)
+        val curAccent = Prefs.accent(this, theme.id)
+        Themes.ACCENT_COLORS.forEachIndexed { i, c ->
+            val col = if (c == 0) theme.fillA else c
+            val selected = c == curAccent
+            val v = View(this).apply {
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(col)
+                    setStroke(dp(if (selected) 3 else 1), if (selected) 0xFF8E7CFF.toInt() else 0x55FFFFFF)
+                }
+                contentDescription = Themes.ACCENT_NAMES[i]
+                setOnClickListener {
+                    Prefs.of(this@MainActivity).edit().putInt(Prefs.KEY_ACCENT_PREFIX + theme.id, c).apply()
+                    refreshThemeUi()
+                }
+            }
+            accentRow.addView(v, LinearLayout.LayoutParams(dp(34), dp(34)).apply { rightMargin = dp(10) })
+        }
     }
 
     // ---------- tiny UI helpers ----------
